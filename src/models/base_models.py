@@ -10,7 +10,7 @@ from torch.nn import init, Parameter
 from torch.nn import functional as F
 from transformers import AlbertModel, AlbertTokenizer, BertTokenizer, BertModel
 
-from models.anml.plastic_layers import PlasticModulated, Plastic
+from src.models.anml.plastic_layers import PlasticModulated, Plastic
 
 
 class TransformerClsModel(nn.Module):

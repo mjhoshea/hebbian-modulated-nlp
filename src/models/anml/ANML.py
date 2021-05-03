@@ -10,13 +10,14 @@ import numpy as np
 from torch.utils import data
 from transformers import AdamW
 
-import datasets
-import utils
-from models.base_models import ReplayMemory, TransformerClsModel, TransformerNeuromodulator
+import src.datasets
+import src.models.utils
+from src.models.base_models import ReplayMemory, TransformerClsModel, TransformerNeuromodulator
 
 # import src.datasets
 # import src.models.utils
 # from src.models.base_models import ReplayMemory, TransformerClsModel, TransformerNeuromodulator
+import src
 
 logging.basicConfig(level='INFO', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('ANML-Log')
@@ -64,9 +65,10 @@ class ANML:
         self.nm.load_state_dict(checkpoint['nm'])
         self.pn.load_state_dict(checkpoint['pn'])
 
-    def evaluate(self, dataloader, updates, mini_batch_size):
+    def evaluate(self, dataloader, updates, mini_batch_size, trace_file=None):
 
         support_set = []
+        c = 0
         for _ in range(updates):
             text, labels = self.memory.read_batch(batch_size=mini_batch_size)
             support_set.append((text, labels))
@@ -79,6 +81,7 @@ class ANML:
             task_predictions, task_labels = [], []
             support_loss = []
             for text, labels in support_set:
+                labels_str = labels
                 labels = torch.tensor(labels).to(self.device)
                 input_dict = self.pn.encode_text(text)
                 modulation = self.nm(input_dict)
@@ -89,6 +92,12 @@ class ANML:
                 support_loss.append(loss.item())
                 task_predictions.extend(pred.tolist())
                 task_labels.extend(labels.tolist())
+                c += 1
+                if trace_file is not None:
+                    logger.info('Writing trace labels {}'.format(labels_str))
+                    file = trace_file + '_support_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
+                    logger.info('Writing trace to file {}'.format(file))
+                    torch.save(self.pn.hebbian.trace, file)
 
             acc, prec, rec, f1 = src.models.utils.calculate_metrics(task_predictions, task_labels)
 
@@ -109,6 +118,12 @@ class ANML:
                 all_losses.append(loss)
                 all_predictions.extend(pred.tolist())
                 all_labels.extend(labels.tolist())
+                c += 1
+                if trace_file is not None:
+                    logger.info('Writing trace labels {}'.format(labels_str))
+                    file = trace_file + '_query_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
+                    logger.info('Writing trace to file {}'.format(file))
+                    torch.save(self.pn.hebbian.trace, file)
 
         acc, prec, rec, f1 = src.models.utils.calculate_metrics(all_predictions, all_labels)
         logger.info('Test metrics: Loss = {:.4f}, accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
@@ -256,7 +271,7 @@ class ANML:
             logger.info('Testing on {}'.format(test_dataset.__class__.__name__))
             test_dataloader = data.DataLoader(test_dataset, batch_size=mini_batch_size, shuffle=False,
                                               collate_fn=src.datasets.utils.batch_encode)
-            acc, prec, rec, f1 = self.evaluate(dataloader=test_dataloader, updates=updates, mini_batch_size=mini_batch_size)
+            acc, prec, rec, f1 = self.evaluate(dataloader=test_dataloader, updates=updates, mini_batch_size=mini_batch_size, trace_file=kwargs.get('trace_file'))
             accuracies.append(acc)
             precisions.append(prec)
             recalls.append(rec)
@@ -265,6 +280,14 @@ class ANML:
         logger.info('Overall test metrics: Accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
                     'F1 score = {:.4f}'.format(np.mean(accuracies), np.mean(precisions), np.mean(recalls),
                                                np.mean(f1s)))
+
+        logger.info('ResultHeader,tag,' + ','.join(list(kwargs.keys())) + ',TestAveAccuracy,TestAvePrecision,'
+                                                                          'TestAveRecall,TestAveF1s')
+        logger.info(
+            'ResultValues,' + kwargs.get('tag') + ',' + ','.join(map(str, list(kwargs.values())))
+            + ',{},{},{},{}'.format(np.mean(accuracies),
+                                    np.mean(precisions), np.mean(recalls),
+                                    np.mean(f1s)))
 
         return accuracies
 

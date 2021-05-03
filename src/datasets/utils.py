@@ -6,7 +6,7 @@ import torch
 import numpy as np
 from sklearn.cluster import KMeans
 
-from datasets.text_classification_dataset import AGNewsDataset, AmazonDataset, YelpDataset, DBPediaDataset, \
+from src.datasets.text_classification_dataset import AGNewsDataset, AmazonDataset, YelpDataset, DBPediaDataset, \
     YahooAnswersDataset
 
 
