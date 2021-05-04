@@ -59,14 +59,15 @@ def get_dataset(base_path, dataset_id):
 
 
 def offset_labels(dataset):
-    if isinstance(dataset, AmazonDataset) or isinstance(dataset, YelpDataset):
+    # if isinstance(dataset, AmazonDataset) or isinstance(dataset, YelpDataset):
+    #     offset_by = 0
+    # el
+    if isinstance(dataset, AGNewsDataset):
         offset_by = 0
-    elif isinstance(dataset, AGNewsDataset):
-        offset_by = 5
     elif isinstance(dataset, DBPediaDataset):
-        offset_by = 5 + 4
-    elif isinstance(dataset, YahooAnswersDataset):
-        offset_by = 5 + 4 + 14
+        offset_by = 4
+    # elif isinstance(dataset, YahooAnswersDataset):
+    #     offset_by = 5 + 4 + 14
     dataset.data['labels'] = dataset.data['labels'] + offset_by
     return dataset
 

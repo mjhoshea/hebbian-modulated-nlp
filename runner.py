@@ -140,9 +140,4 @@ if __name__ == '__main__':
     os.makedirs('trace', exist_ok=True)
     setattr(args, 'trace_file', 'trace/trace_' + tag)
 
-    accuracies, precisions, recalls, f1s = learner.testing(test_datasets, **vars(args))
-    logger.info('ResultHeader,tag,' + ','.join(list(vars(args).keys())) + ',TestAveAccuracy,TestAvePrecision,'
-                                                                          'TestAveRecall,TestAveF1s')
-    logger.info(
-        'ResultValues,' + tag + ',' + ','.join(map(str, list(vars(args).values())))
-        + ',{},{},{},{}'.format(accuracies, precisions, recalls, f1s))
+    learner.testing(test_datasets, **vars(args))

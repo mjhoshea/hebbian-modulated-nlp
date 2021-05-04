@@ -93,11 +93,11 @@ class ANML:
                 task_predictions.extend(pred.tolist())
                 task_labels.extend(labels.tolist())
                 c += 1
-                if trace_file is not None:
+                if trace_file is not None and hasattr(self.pn.out_layer, 'trace'):
                     logger.info('Writing trace labels {}'.format(labels_str))
                     file = trace_file + '_support_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
                     logger.info('Writing trace to file {}'.format(file))
-                    torch.save(self.pn.hebbian.trace, file)
+                    torch.save(self.pn.out_layer.trace, file)
 
             acc, prec, rec, f1 = src.models.utils.calculate_metrics(task_predictions, task_labels)
 
@@ -119,11 +119,11 @@ class ANML:
                 all_predictions.extend(pred.tolist())
                 all_labels.extend(labels.tolist())
                 c += 1
-                if trace_file is not None:
+                if trace_file is not None and hasattr(self.pn.out_layer, 'trace'):
                     logger.info('Writing trace labels {}'.format(labels_str))
                     file = trace_file + '_query_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
                     logger.info('Writing trace to file {}'.format(file))
-                    torch.save(self.pn.hebbian.trace, file)
+                    torch.save(self.pn.out_layer.trace, file)
 
         acc, prec, rec, f1 = src.models.utils.calculate_metrics(all_predictions, all_labels)
         logger.info('Test metrics: Loss = {:.4f}, accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
