@@ -63,9 +63,9 @@ class ANML:
     def load_model(self, model_path):
         checkpoint = torch.load(model_path)
         self.nm.load_state_dict(checkpoint['nm'])
-        self.pn.load_state_dict(checkpoint['pn'])
+        self.pn.load_state_dict(checkpoint['pn'], strict=True)
 
-    def evaluate(self, dataloader, updates, mini_batch_size, trace_file=None):
+    def evaluate(self, dataloader, updates, mini_batch_size, trace_file=None, vis_file=None):
 
         support_set = []
         c = 0
@@ -106,27 +106,37 @@ class ANML:
 
             all_losses, all_predictions, all_labels = [], [], []
 
+            c = 0
             for text, labels in dataloader:
+                labels_str = labels
                 labels = torch.tensor(labels).to(self.device)
                 input_dict = self.pn.encode_text(text)
                 with torch.no_grad():
                     modulation = self.nm(input_dict)
-                    output = fpn(input_dict, modulation, out_from='full')
+                    output = fpn(input_dict, modulation, out_from='full', is_training=False)
                     loss = self.loss_fn(output, labels)
+                    if vis_file is not None:
+                        pre_mod, mod, post_mod, file_name = self.pn.vis(input_dict, modulation, out_from='full')
+                        filename = vis_file + '_' + file_name + '_i_' + str(c) + '_label_' + '_'.join(map(str, labels_str))
+                        np.savez('./{}'.format(filename), pre_mod=pre_mod.numpy(), mod=mod.numpy(),
+                                 post_mod=post_mod.numpy())
                 loss = loss.item()
                 pred = src.models.utils.make_prediction(output.detach())
                 all_losses.append(loss)
                 all_predictions.extend(pred.tolist())
                 all_labels.extend(labels.tolist())
                 c += 1
-                if trace_file is not None and hasattr(self.pn.out_layer, 'trace'):
-                    logger.info('Writing trace labels {}'.format(labels_str))
-                    file = trace_file + '_query_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
-                    logger.info('Writing trace to file {}'.format(file))
-                    torch.save(self.pn.out_layer.trace, file)
+                logger.info('Evaluate {}: Loss = {:.4f}, pred = {}, labels = {}, '.format(c, loss, pred.tolist(),
+                                                                                          labels.tolist()))
+                # c += 1
+                # if trace_file is not None and hasattr(self.pn.out_layer, 'trace'):
+                #     logger.info('Writing trace labels {}'.format(labels_str))
+                #     file = trace_file + '_query_' + str(c) + '_'.join(map(str, labels_str)) + '.pt'
+                #     logger.info('Writing trace to file {}'.format(file))
+                #     torch.save(self.pn.out_layer.trace, file)
 
         acc, prec, rec, f1 = src.models.utils.calculate_metrics(all_predictions, all_labels)
-        logger.info('Test metrics: Loss = {:.4f}, accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
+        logger.info('Eval metrics: Loss = {:.4f}, accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
                     'F1 score = {:.4f}'.format(np.mean(all_losses), acc, prec, rec, f1))
 
         return acc, prec, rec, f1
@@ -176,9 +186,7 @@ class ANML:
 
                     modulation = self.nm(input_dict)
 
-                    output = fpn(input_dict,  modulation, out_from='full')
-
-
+                    output = fpn(input_dict, modulation, out_from='full')
 
                     loss = self.loss_fn(output, labels)
                     diffopt.step(loss)
@@ -211,9 +219,7 @@ class ANML:
                         logger.info('Terminating training as all the data is seen')
                         return
 
-
                 for text, labels in query_set:
-
 
                     labels = torch.tensor(labels).to(self.device)
                     input_dict = self.pn.encode_text(text)
@@ -271,7 +277,8 @@ class ANML:
             logger.info('Testing on {}'.format(test_dataset.__class__.__name__))
             test_dataloader = data.DataLoader(test_dataset, batch_size=mini_batch_size, shuffle=False,
                                               collate_fn=src.datasets.utils.batch_encode)
-            acc, prec, rec, f1 = self.evaluate(dataloader=test_dataloader, updates=updates, mini_batch_size=mini_batch_size, trace_file=kwargs.get('trace_file'))
+            acc, prec, rec, f1 = self.evaluate(dataloader=test_dataloader, updates=updates,
+                                               mini_batch_size=mini_batch_size, trace_file=kwargs.get('trace_file'))
             accuracies.append(acc)
             precisions.append(prec)
             recalls.append(rec)
@@ -291,21 +298,80 @@ class ANML:
 
         return accuracies
 
-    def visualise(self, test_datasets, n,  **kwargs):
-
+    def visualise(self, test_datasets, **kwargs):
+        mini_batch_size = 1
+        accuracies, precisions, recalls, f1s = [], [], [], []
         for test_dataset in test_datasets:
             logger.info('Testing on {}'.format(test_dataset.__class__.__name__))
-            test_dataloader = data.DataLoader(test_dataset, batch_size=n, shuffle=False,
+            vis_file = 'vis_' + test_dataset.__class__.__name__
+            test_dataloader = data.DataLoader(test_dataset, batch_size=mini_batch_size, shuffle=False,
                                               collate_fn=src.datasets.utils.batch_encode)
+            acc, prec, rec, f1 = self.do_visualise(dataloader=test_dataloader, vis_file=vis_file)
+            accuracies.append(acc)
+            precisions.append(prec)
+            recalls.append(rec)
+            f1s.append(f1)
 
-            for text, labels in test_dataloader:
-                labels = torch.tensor(labels).to(self.device)
-                input_dict = self.pn.encode_text(text)
-                with torch.no_grad():
-                    modulation = self.nm(input_dict)
-                    pre_mod, mod, post_mod, file_name = self.pn.vis(input_dict, modulation, out_from='full')
-                    np.savez('../../../visualisation/{}'.format(file_name), pre_mod=pre_mod.numpy(), mod=mod.numpy(), post_mod=post_mod.numpy())
+        logger.info('Overall test metrics: Accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
+                    'F1 score = {:.4f}'.format(np.mean(accuracies), np.mean(precisions), np.mean(recalls),
+                                               np.mean(f1s)))
 
+        logger.info('ResultHeader,tag,' + ','.join(list(kwargs.keys())) + ',TestAveAccuracy,TestAvePrecision,'
+                                                                          'TestAveRecall,TestAveF1s')
+        logger.info(
+            'ResultValues,' + kwargs.get('tag') + ',' + ','.join(map(str, list(kwargs.values())))
+            + ',{},{},{},{}'.format(np.mean(accuracies),
+                                    np.mean(precisions), np.mean(recalls),
+                                    np.mean(f1s)))
 
-                break
+        return accuracies
 
+    # def visualise(self, test_datasets, n,  **kwargs):
+    #
+    #     for test_dataset in test_datasets:
+    #         logger.info('Testing on {}'.format(test_dataset.__class__.__name__))
+    #         test_dataloader = data.DataLoader(test_dataset, batch_size=n, shuffle=False,
+    #                                           collate_fn=src.datasets.utils.batch_encode)
+    #
+    #         for text, labels in test_dataloader:
+    #             labels = torch.tensor(labels).to(self.device)
+    #             input_dict = self.pn.encode_text(text)
+    #             with torch.no_grad():
+    #                 modulation = self.nm(input_dict)
+    #                 pre_mod, mod, post_mod, file_name = self.pn.vis(input_dict, modulation, out_from='full')
+    #                 np.savez('../../../visualisation/{}'.format(file_name), pre_mod=pre_mod.numpy(), mod=mod.numpy(), post_mod=post_mod.numpy())
+    #
+    #
+    #             break
+    def do_visualise(self, dataloader, vis_file=None):
+
+        c = 0
+        all_losses, all_predictions, all_labels = [], [], []
+        for text, labels in dataloader:
+            labels_str = labels
+            labels = torch.tensor(labels).to(self.device)
+            input_dict = self.pn.encode_text(text)
+            with torch.no_grad():
+                modulation = self.nm(input_dict)
+                output = self.pn(input_dict, modulation, out_from='full', is_training=False)
+                loss = self.loss_fn(output, labels)
+                if vis_file is not None:
+                    pre_mod, mod, post_mod, post_mod2, file_name = self.pn.vis(input_dict, modulation, out_from='full')
+                    filename = vis_file + '_' + file_name + '_i_' + str(c) + '_label_' + '_'.join(
+                        map(str, labels_str))
+                    np.savez('./{}'.format(filename), pre_mod=pre_mod.numpy(), mod=mod.numpy(),
+                             post_mod=post_mod.numpy(), post_mod2=post_mod2.numpy())
+            loss = loss.item()
+            pred = src.models.utils.make_prediction(output.detach())
+            all_losses.append(loss)
+            all_predictions.extend(pred.tolist())
+            all_labels.extend(labels.tolist())
+            c += 1
+            logger.info('Evaluate {}: Loss = {:.4f}, pred = {}, labels = {}, '.format(c, loss, pred.tolist(),
+                                                                                      labels.tolist()))
+
+        acc, prec, rec, f1 = src.models.utils.calculate_metrics(all_predictions, all_labels)
+        logger.info('Eval metrics: Loss = {:.4f}, accuracy = {:.4f}, precision = {:.4f}, recall = {:.4f}, '
+                    'F1 score = {:.4f}'.format(np.mean(all_losses), acc, prec, rec, f1))
+
+        return acc, prec, rec, f1

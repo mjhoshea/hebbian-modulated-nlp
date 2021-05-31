@@ -75,23 +75,23 @@ class TransformerClsModel(nn.Module):
         pre_mod = None
         post_mod = None
         file_name = None
-
+        post_mod2 = None
         if out_from == 'full':
             _, out = self.encoder(inputs['input_ids'], attention_mask=inputs['attention_mask'])
             if self.modulation == 'input':
-                pre_mod = out.copy()
+                pre_mod = out.clone()
 
                 out = modulation * out
                 out = self.out_layer(out, is_training)
 
-                post_mod = out.copy()
+                post_mod = out.clone()
                 file_name = 'input_modulation'
 
             elif self.modulation == 'hebbian':
                 pre_mod = out.copy()
 
                 out = self.out_layer(out, modulation, is_training)
-                post_mod = out.copy()
+                post_mod = out.clone()
 
                 file_name = 'hebbian_modulation'
             elif self.modulation == 'double':
@@ -101,16 +101,17 @@ class TransformerClsModel(nn.Module):
                 pre_mod = out
 
                 out = mod1 * out
-                a = out.copy()
+                a = out.clone()
                 out = self.out_layer(out, mod2, is_training)
-                b = out.copy()
-                post_mod = torch.array([a, b])
-
+                b = out.clone()
+                post_mod = a
+                post_mod2 = b
+                # note a and b have different dimensions a ( 1, 768 ) b (1,18)
                 file_name = "double_modulation"
             else:
                 out = self.out_layer(out, is_training)
 
-        return pre_mod, modulation, post_mod, file_name
+        return pre_mod, modulation, post_mod, file_name, post_mod2
 
 
 
@@ -127,6 +128,7 @@ class TransformerRLN(nn.Module):
         elif model_name == 'bert':
             self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             self.encoder = BertModel.from_pretrained('bert-base-uncased')
+
         else:
             raise NotImplementedError
         self.to(self.device)
